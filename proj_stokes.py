@@ -1,13 +1,11 @@
-#!/Users/dra/anaconda3/envs/py37_astropy/bin/python
 # Import Packages 
 import numpy as np
 import h5py
 import yt
 import sys
 import matplotlib
-matplotlib.use("TkAgg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import ImageGrid
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 
 class ProjectStokes():
@@ -311,13 +309,17 @@ class ProjectStokes():
         ytitle = r'$P[\%]$'
         xcmap = 'cividis'
         ycmap = 'RdBu_r'
-        fig = plt.figure(figsize=(7,6))
+        # fig = plt.figure(figsize=(7,6))
+        fig, axs = plt.subplots(2, 1,
+                       figsize=(5,6),
+                       gridspec_kw={
+                           'height_ratios': [2.5, 1]})
     
-        ax = plt.subplot(221)
+        ax = axs[0]
         ax = heatmap(ax,x,xcmap,vmin=0,vmax=1)
         ax.set_title(xtitle)
     
-        ax = plt.subplot(212)
+        ax = axs[1]
         ax.semilogy(x.flatten(),y.flatten(),'o',fillstyle='none')
         ax.set_xlabel(xtitle) 
         ax.set_ylabel(ytitle) 
