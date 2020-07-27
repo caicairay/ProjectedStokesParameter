@@ -15,19 +15,22 @@ class ProjectStokes():
     To calculate projected stokes parameters
     Usage:
         self.create_window(center, width, resolution,north_vector)
-        Define projection window parameter
+            Define projection window parameter
             center: the center of the window
             width: the width of the window
             resolution: number of grids of the window
             north_vector: the vector that point 'up' after projection
 
         self.set_LOS(n=None)
-        Define LOS vector
+            Define LOS vector
             if n is None, return current LOS vector
             else, define LOS vector to be n
 
+        self.LOS_generator(theta,phi,unit='rad',main_axis = None)
+            Define LOS vector using theta and phi.
+
         self.project_stokes(data_object=None)
-        project stokes parameter on 2D plane, to mimic observation
+            project stokes parameter on 2D plane, to mimic observation
             if data_object is None, project the whole domain
             else project provided data_object
     Note:
@@ -68,6 +71,11 @@ class ProjectStokes():
                                   )
         return self.ds
     def set_main_axis(self, main_axis=None):
+        """
+        Main axis is a special coordinate axis. It must be one of the cube axses.
+        Given LOS, the POS north is the projection of main axis, and the POS east is defined accordingly. 
+        If LOS = main axis, POS north and east are other 2 cube axses.
+        """
         if main_axis is not None:
             if main_axis not in [[1,0,0],[0,1,0],[0,0,1]]:
                 sys.exit("Main axis must be one of x, y or z axis (e.g. [1,0,0])")
@@ -76,7 +84,11 @@ class ProjectStokes():
         return self.main_axis
 
     def set_LOS(self,n=None):
-        """ Define LOS vector """
+        """ 
+        Define LOS vector
+        Input:
+            n: define LOS vector to be n. If n is None, return current LOS vector
+        """
         if n is not None:
             self.los = n/np.linalg.norm(n)
             ## Setup New Coordinates
@@ -118,6 +130,7 @@ class ProjectStokes():
              return vec_2t_north,vec_2t_east
          Q,U=headless_orien(vec_north,vec_east)
          return Q,U
+
     def derive_field(self):
         """ add derived stokes parameter field to YT dataset """
         def get_Q(field,data):
@@ -142,7 +155,14 @@ class ProjectStokes():
         return True
 
     def create_window(self, center, width, resolution,north_vector):
-        """ Create projection window """
+        """ 
+        Create projection window 
+        Input:
+            center: the center of the window
+            width: the width of the window
+            resolution: number of grids of the window
+            north_vector: the vector that point 'up' after projection
+        """
         self.window_center = center
         self.window_width = width
         self.window_resolution = resolution
@@ -162,7 +182,11 @@ class ProjectStokes():
         return self.window_resolution
 
     def project_density(self, data_object=None):
-        """ Project density on a plane """
+        """ 
+        Project density on a plane 
+        Input:
+            data_object: a yt data object. Optional. Defalt is all_data
+        """
         if data_object is None:
             ad = self.ds
         else:
@@ -186,8 +210,13 @@ class ProjectStokes():
         else:
             sys.exit("Error: Projection window is not defined")
         return True
+
     def project_stokes(self, data_object=None):
-        """ Project stokes parameter on a plane """
+        """
+        Project stokes parameter on a plane 
+        Input:
+            data_object: a yt data object. Optional. Defalt is all_data
+        """
         if data_object is None:
             ad = self.ds
         else:
@@ -243,7 +272,7 @@ class ProjectStokes():
         def annotation_polar(ax,x,y,Q,U,mask_every=None):
             vx = np.sin(self.offset)
             vy = np.cos(self.offset)
-            quiveropts = dict(color='silver',
+            quiveropts = dict(cmap='RdBu_r', clim=(0,100),
                               headlength=0, pivot='middle',
                               scale=15.,headaxislength=0, headwidth=1) 
             if mask_every is not None:
@@ -260,13 +289,17 @@ class ProjectStokes():
             else:
                 I = vx
                 J = vy
-            return ax.quiver(x,y,I.T,J.T,**quiveropts)
+                P = self.DOP*100
+            return ax.quiver(x,y,I.T,J.T,P,**quiveropts)
+
         def heatmap(ax,x,cmap,vmin=None,vmax=None):
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size='5%', pad=0)
+            cax_quiver = divider.append_axes("bottom", size='5%', pad=0)
             pc = ax.pcolormesh(self.x_corner,self.x_corner,x, cmap = cmap,vmin=vmin,vmax=vmax)
             qv = annotation_polar(ax,self.x_center,self.x_center,self.proj_Q,self.proj_U)
             plt.colorbar(pc, cax=cax, ax = ax)
+            plt.colorbar(qv, cax=cax_quiver, ax = ax, orientation='horizontal')
             ax.set_aspect(1.)
             ax.tick_params(right= False,top= False,left= False, bottom= False,
                     labelright=False,labeltop=False,labelleft=False,labelbottom=False)
@@ -284,12 +317,8 @@ class ProjectStokes():
         ax = heatmap(ax,x,xcmap,vmin=0,vmax=1)
         ax.set_title(xtitle)
     
-        ax = plt.subplot(222)
-        ax = heatmap(ax,y,ycmap,vmin=0,vmax=100)
-        ax.set_title(ytitle)
-    
         ax = plt.subplot(212)
-        ax.loglog(x.flatten(),y.flatten(),'o')
+        ax.semilogy(x.flatten(),y.flatten(),'o',fillstyle='none')
         ax.set_xlabel(xtitle) 
         ax.set_ylabel(ytitle) 
         fig.tight_layout()
@@ -301,6 +330,7 @@ class ProjectStokes():
                 sys.exit("Please define figtitle")
         else:
             plt.show()
+
     def dump_data(self,datatitle):
         x = self.proj_density.flatten()/self.proj_density.max()
         y = self.DOP.flatten()*100
@@ -308,7 +338,18 @@ class ProjectStokes():
         array = np.asarray([x,y,z]).T
         np.savetxt(datatitle, array, delimiter=",")
         print ("Data dumpted, name: {}".format(datatitle))
-    def los_generator(self, theta,phi,unit='rad',main_axis = None):
+
+    def LOS_generator(self, theta,phi,unit='rad',main_axis = None):
+        """
+        Helper function to generate LOS vector
+        Input:
+            theta, phi: angle in spherical coordinate
+            unit: 'rad' or 'deg'
+            main_axis: set the main axis of the spherical coordinate. Defalt is
+                'z' axis
+        Output:
+            LOS vector: the vector represent the line of sight
+        """
         if main_axis is None:
             main_axis = self.main_axis
         if unit == 'rad':
@@ -330,72 +371,5 @@ class ProjectStokes():
         else:
             sys.exit("main axis unacceptable")
         print ('LOS generated, LOS is {}'.format(vec))
+        self.set_LOS(vec)
         return vec
-
-
-
-if __name__ == "__main__":
-    flnm = '../data/perp/g0001_0023.h5'
-    data = ProjectStokes()
-    data.load_scorpio_uniform(flnm)
-
-    center = data.ds.domain_center
-    width = np.array([0.32]*3)
-    resolution = 16
-    data.create_window(center, width, resolution, "pos_north")
-    data.build_coords()
-    data.set_main_axis([1,0,0])
-    theta = 90
-    phi = 90
-    n = data.los_generator(theta,phi,'deg',main_axis=[0,1,0])
-    data.set_LOS(n)
-#    ad = data.ds.sphere(center = data.ds.domain_center, radius = np.array(data.ds.domain_width)[0]/2)
-    data.project_stokes()
-    data.project_density()
-    data.dump_data('test.txt')
-    data.make_plot(save=True,figtitle='test.png')
-
-#    res_case = 'low'
-#    for obj in ['box','sphere']:
-#        for win_size in ['small','large']:
-#            for field in ['stokes','density']:
-#                flnm = '../data/para/g0001_0023.h5'
-#                data = ProjectStokes(flnm)
-#                center = data.ds.domain_center
-#                if win_size == 'small':
-#                    width = np.array([0.32]*3)
-#                    resolution = 16
-#                elif win_size == 'large':
-#                    width = data.ds.domain_width
-#                    resolution = 18
-#                data.create_window(center, width, resolution, "pos_north")
-#                data.build_coords()
-#            
-#                np.random.seed(16062020)
-#                los_list = np.random.rand(4,3)
-#            
-#                fig = plt.figure(figsize=(5,9))
-#                grid = ImageGrid(fig, 111,
-#                                 nrows_ncols=(1, 4),
-#                                 axes_pad=0.0,
-#                                 share_all=True,
-#                                 label_mode="L",
-#                                 cbar_location="right",
-#                                 cbar_mode="single",
-#                                 )
-#                for los,ax in zip(los_list,grid):
-#                    data.set_LOS(los)
-#                    if obj == 'sphere':
-#                        data.project_stokes(data.ds.sphere(center = data.ds.domain_center, radius = np.array(data.ds.domain_width)[0]/2))
-#                        data.project_density(data.ds.sphere(center = data.ds.domain_center, radius = np.array(data.ds.domain_width)[0]/2))
-#                    elif obj == 'box':
-#                        data.project_stokes()
-#                        data.project_density()
-#                    if field == 'stokes':
-#                        pc = ax.pcolormesh(data.x_corner,data.x_corner,data.DOP, vmin=0,vmax=1, cmap = 'RdBu_r')
-#                    elif field == 'density':
-#                        pc = ax.pcolormesh(data.x_corner,data.x_corner,np.log10(data.proj_density), 
-#                                vmin=-1,vmax=3,cmap = 'cividis')
-#                    qv = annotation_polar(ax,data.x_center,data.x_center,data.proj_Q,data.proj_U)
-#                grid.cbar_axes[0].colorbar(pc)
-#                fig.savefig("{}_{}_{}.png".format(obj,field,win_size),bbox_inches='tight',dpi=200)
