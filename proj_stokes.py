@@ -266,63 +266,56 @@ class ProjectStokes():
         self.x_corner = np.arange(left_edge, right_edge+dx/2, dx)
         self.x_center = self.x_corner[:-1]+dx/2
         return True
-    def make_plot(self,save=False, figtitle=None):
-        def annotation_polar(ax,x,y,Q,U,mask_every=None):
-            vx = np.sin(self.offset)
-            vy = np.cos(self.offset)
-            quiveropts = dict(cmap='RdBu_r', clim=(0,100),
-                              headlength=0, pivot='middle',
-                              scale=15.,headaxislength=0, headwidth=1) 
-            if mask_every is not None:
-                dlength=len(Q.flatten())
-                dshape=Q.T.shape
-                mask = np.full(dlength, True)
-                mask[:int(np.round(dlength/mask_every))] = False 
-                np.random.shuffle(mask) 
-                mask=np.reshape(mask,dshape)
-                ma_vx=np.ma.array(vx,mask=mask)
-                ma_vy=np.ma.array(vy,mask=mask)
-                I = ma_vx
-                J = ma_vy
-            else:
-                I = vx
-                J = vy
-                P = self.DOP*100
-            return ax.quiver(x,y,I.T,J.T,P,**quiveropts)
-
-        def heatmap(ax,x,cmap,vmin=None,vmax=None):
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size='5%', pad=0)
-            cax_quiver = divider.append_axes("bottom", size='5%', pad=0)
-            pc = ax.pcolormesh(self.x_corner,self.x_corner,x, cmap = cmap,vmin=vmin,vmax=vmax)
-            qv = annotation_polar(ax,self.x_center,self.x_center,self.proj_Q,self.proj_U)
-            plt.colorbar(pc, cax=cax, ax = ax)
-            plt.colorbar(qv, cax=cax_quiver, ax = ax, orientation='horizontal')
-            ax.set_aspect(1.)
-            ax.tick_params(right= False,top= False,left= False, bottom= False,
-                    labelright=False,labeltop=False,labelleft=False,labelbottom=False)
-            return ax
-
+    def make_plot(self,save=False, figtitle=None, pcolormesh_kwargs={}, quiver_kwargs={}):
         x = self.proj_density/self.proj_density.max()
         y = self.DOP*100
         xtitle = r'$N/N_{max}$'
         ytitle = r'$P[\%]$'
-        xcmap = 'cividis'
-        ycmap = 'RdBu_r'
-        # fig = plt.figure(figsize=(7,6))
         fig, axs = plt.subplots(2, 1,
                        figsize=(5,6),
                        gridspec_kw={
                            'height_ratios': [2.5, 1]})
     
+        # the 2D plot
         ax = axs[0]
-        ax = heatmap(ax,x,xcmap,vmin=0,vmax=1)
+        # make axis locatable
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size='5%', pad=0)
+        cax_quiver = divider.append_axes("bottom", size='5%', pad=0)
+        # make heatmap plot
+        pcolormesh_kwargs['cmap'] = pcolormesh_kwargs.get('cmap', 'cividis')
+        pc = ax.pcolormesh(self.x_corner,self.x_corner,x, **pcolormesh_kwargs)
+        # make quiver plot
+        default_quiver_kwargs = dict(cmap='RdBu_r', clim=(0,100),
+                          headlength=0, pivot='middle',
+                          scale=15.,headaxislength=0, headwidth=1)
+        quiveropts = quiver_kwargs.copy()
+        for key, value in default_quiver_kwargs.items():
+            quiveropts[key] = quiveropts.get(key, value)
+        every = quiveropts.pop('plot_every', None)
+        mask1 = (slice(None,None,every))
+        mask2 = (slice(None,None,every),slice(None,None,every))
+        xc = self.x_center[mask1]
+        yc = self.x_center[mask1]
+        I = np.sin(self.offset)[mask2]
+        J = np.cos(self.offset)[mask2]
+        P = y[mask2]
+        qv = ax.quiver(xc,yc,I.T,J.T,P,**quiveropts)
+        # finalizing 2D plot
+        plt.colorbar(pc, cax=cax, ax = ax)
+        plt.colorbar(qv, cax=cax_quiver, ax = ax, orientation='horizontal')
+        ax.set_aspect(1.)
+        ax.tick_params(right= False,top= False,left= False, bottom= False,
+                labelright=False,labeltop=False,labelleft=False,labelbottom=False)
         ax.set_title(xtitle)
     
+        # the 1D plot
         ax = axs[1]
         ax.semilogy(x.flatten(),y.flatten(),'o',fillstyle='none')
         ax.set_xlabel(xtitle) 
         ax.set_ylabel(ytitle) 
+
+        # finalizing the figure
         fig.tight_layout()
         if save:
             if figtitle is not None:
