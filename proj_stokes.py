@@ -108,26 +108,48 @@ class ProjectStokes():
                            self.pos_east))
         return self.los
 
-    def bfield_projection(self,vecx,vecy,vecz):
-         """ Help function to project magnetic field """
-         # Project vecx,y,z onto pos_north, pos_east
-         u = np.stack((vecx,vecy,vecz),axis=3)
+    def _LOS_bfield(self,vecx,vecy,vecz):
+        """ Help function to project magnetic field """
+        # Project vecx,y,z onto LOS vector
+        los_b = self.los[0]*vecx \
+              + self.los[1]*vecy \
+              + self.los[2]*vecz 
+        return los_b
+    def add_LOS_bfield(self):
+        """ add derived LOS b-field to YT dataset"""
+        def get_LOS_b(field,data):
+            vecx = data['magnetic_x']
+            vecy = data['magnetic_y']
+            vecz = data['magnetic_z']
+            los_b = self._LOS_bfield(vecx,vecy,vecz)
+            return los_b
+        if (self.los_created):
+            self.ds.add_field(("index","magnetic_field_LOS"), function=get_LOS_b,take_log=False,force_override=True,sampling_type="cell")
+            print ("YT magnetic_field_LOS added.")
+        else:
+            sys.exit("Error: LOS vector is not defined")
+        return True
 
-         vec_north = self.pos_north[0]*vecx \
-                   + self.pos_north[1]*vecy \
-                   + self.pos_north[2]*vecz
-         vec_east = self.pos_east[0]*vecx \
-                  + self.pos_east[1]*vecy \
-                  + self.pos_east[2]*vecz
+    def stokes_POS_component(self,vecx,vecy,vecz):
+        """ Help function to project magnetic field """
+        # Project vecx,y,z onto pos_north, pos_east
+        u = np.stack((vecx,vecy,vecz),axis=3)
 
-         # Get the Headless Orientation of 2d vectors
-         def headless_orien(vec_north,vec_east,mask=None):
-             t2=2*np.arctan(vec_east/vec_north)
-             vec_2t_north=np.cos(t2)
-             vec_2t_east=np.sin(t2)
-             return vec_2t_north,vec_2t_east
-         Q,U=headless_orien(vec_north,vec_east)
-         return Q,U
+        vec_north = self.pos_north[0]*vecx \
+                  + self.pos_north[1]*vecy \
+                  + self.pos_north[2]*vecz
+        vec_east = self.pos_east[0]*vecx \
+                 + self.pos_east[1]*vecy \
+                 + self.pos_east[2]*vecz
+
+        # Get the Headless Orientation of 2d vectors
+        def headless_orien(vec_north,vec_east,mask=None):
+            t2=2*np.arctan(vec_east/vec_north)
+            vec_2t_north=np.cos(t2)
+            vec_2t_east=np.sin(t2)
+            return vec_2t_north,vec_2t_east
+        Q,U=headless_orien(vec_north,vec_east)
+        return Q,U
 
     def derive_field(self):
         """ add derived stokes parameter field to YT dataset """
@@ -135,13 +157,13 @@ class ProjectStokes():
             vecx = data['magnetic_x']
             vecy = data['magnetic_y']
             vecz = data['magnetic_z']
-            Q,U = self.bfield_projection(vecx,vecy,vecz)
+            Q,U = self.stokes_parameter(vecx,vecy,vecz)
             return Q
         def get_U(field,data):
             vecx = data['magnetic_x']
             vecy = data['magnetic_y']
             vecz = data['magnetic_z']
-            Q,U = self.bfield_projection(vecx,vecy,vecz)
+            Q,U = self.stokes_parameter(vecx,vecy,vecz)
             return U
 
         if (self.los_created):
@@ -243,6 +265,38 @@ class ProjectStokes():
                                               num_threads = 2)
             self.DOP=np.sqrt(self.proj_Q**2+self.proj_U**2)
             self.offset=.5*np.arctan2(self.proj_U,self.proj_Q)
+        else:
+            sys.exit("Error: Projection window is not defined")
+        return True
+
+    def project_LOS_b(self, data_object=None):
+        """
+        Integral LOS magnetic field along LOS
+        Input:
+            data_object: a yt data object. Optional. Defalt is all_data
+        """
+        if data_object is None:
+            ad = self.ds
+        else:
+            ad = data_object
+        if ((self.add_LOS_bfield()) and (self.window_created)):
+            c = self.window_center
+            L = self.los
+            W = self.window_width
+            N = self.window_resolution
+            if isinstance(self.window_north_vector, str):
+                if self.window_north_vector == "pos_north":
+                    north_vector = self.pos_north
+                elif self.window_north_vector == "pos_east":
+                    north_vector = self.pos_east
+            else:
+                north_vector = self.window_north_vector
+            self.integral_LOS_b = yt.off_axis_projection(ad,c, L, W, N,
+                                              "magnetic_field_LOS",
+                                              #weight="density",
+                                              north_vector=north_vector,
+                                              no_ghost=False,
+                                              num_threads = 2)
         else:
             sys.exit("Error: Projection window is not defined")
         return True
